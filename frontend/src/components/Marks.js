@@ -29,9 +29,27 @@ function Marks({ role }) {
   const [students, setStudents] = useState([]);
   const [open, setOpen] = useState(false);
   const [editingMark, setEditingMark] = useState(null);
-  const [formData, setFormData] = useState({ student_id: '', subject: '', marks: '' });
+  const [formData, setFormData] = useState({
+    studentRollNo: '',
+    subject: '',
+    examType: '',
+    marksObtained: '',
+    maxMarks: '',
+    date: new Date().toISOString().split('T')[0]
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const normalizedRole = role?.toLowerCase();
+  const canModify = ['admin', 'faculty'].includes(normalizedRole);
+  const showFacultyColumn = ['admin', 'faculty'].includes(normalizedRole);
+  const emptyColSpan = showFacultyColumn ? 8 : 7;
+
+  const examTypeOptions = [
+    { value: 'mid1', label: 'Mid Semester 1', maxMarks: 30 },
+    { value: 'mid2', label: 'Mid Semester 2', maxMarks: 30 },
+    { value: 'endsem', label: 'End Semester', maxMarks: 60 },
+  ];
 
   useEffect(() => {
     fetchMarks();
@@ -58,11 +76,25 @@ function Marks({ role }) {
 
   const handleOpen = (mark = null) => {
     setEditingMark(mark);
-    setFormData(mark ? {
-      student_id: mark.student_id._id || mark.student_id,
-      subject: mark.subject,
-      marks: mark.marks,
-    } : { student_id: '', subject: '', marks: '' });
+    if (mark) {
+      setFormData({
+        studentRollNo: mark.studentRollNo,
+        subject: mark.subject,
+        examType: mark.examType,
+        marksObtained: mark.marksObtained,
+        maxMarks: mark.maxMarks,
+        date: mark.date ? new Date(mark.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+      });
+    } else {
+      setFormData({
+        studentRollNo: '',
+        subject: '',
+        examType: '',
+        marksObtained: '',
+        maxMarks: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+    }
     setOpen(true);
     setError('');
   };
@@ -70,7 +102,23 @@ function Marks({ role }) {
   const handleClose = () => {
     setOpen(false);
     setEditingMark(null);
-    setFormData({ student_id: '', subject: '', marks: '' });
+    setFormData({
+      studentRollNo: '',
+      subject: '',
+      examType: '',
+      marksObtained: '',
+      maxMarks: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const handleExamTypeChange = (examType) => {
+    const selectedExam = examTypeOptions.find(exam => exam.value === examType);
+    setFormData({
+      ...formData,
+      examType,
+      maxMarks: selectedExam ? selectedExam.maxMarks : ''
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -79,7 +127,12 @@ function Marks({ role }) {
     setError('');
 
     try {
-      const payload = { ...formData, marks: Number(formData.marks) };
+      const payload = {
+        ...formData,
+        marksObtained: Number(formData.marksObtained),
+        maxMarks: Number(formData.maxMarks),
+        date: new Date(formData.date)
+      };
 
       if (editingMark) {
         await api.put(`/api/marks/${editingMark._id}`, payload);
@@ -109,10 +162,15 @@ function Marks({ role }) {
     }
   };
 
-  const normalizedRole = role?.toLowerCase();
-  const canModify = ['admin', 'faculty'].includes(normalizedRole);
-  const showFacultyColumn = ['admin', 'faculty'].includes(normalizedRole);
-  const emptyColSpan = showFacultyColumn ? 5 : 4;
+  const getStudentName = (rollNo) => {
+    const student = students.find(s => s.rollNo === rollNo);
+    return student ? student.name : rollNo;
+  };
+
+  const getExamTypeLabel = (examType) => {
+    const exam = examTypeOptions.find(e => e.value === examType);
+    return exam ? exam.label : examType;
+  };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -137,13 +195,19 @@ function Marks({ role }) {
         </Alert>
       )}
 
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
               <TableCell>Student</TableCell>
               <TableCell>Subject</TableCell>
-              <TableCell>Marks</TableCell>
+              <TableCell>Exam Type</TableCell>
+              <TableCell>Obtained</TableCell>
+              <TableCell>Max Marks</TableCell>
+              <TableCell>Percentage</TableCell>
+              <TableCell>Date</TableCell>
               {showFacultyColumn && <TableCell>Faculty</TableCell>}
               <TableCell>Actions</TableCell>
             </TableRow>
@@ -152,9 +216,13 @@ function Marks({ role }) {
             {marks.length > 0 ? (
               marks.map((mark) => (
                 <TableRow key={mark._id}>
-                  <TableCell>{mark.student_id?.name || 'Unknown'}</TableCell>
+                  <TableCell>{getStudentName(mark.studentRollNo)}</TableCell>
                   <TableCell>{mark.subject}</TableCell>
-                  <TableCell>{mark.marks}</TableCell>
+                  <TableCell>{getExamTypeLabel(mark.examType)}</TableCell>
+                  <TableCell>{mark.marksObtained}</TableCell>
+                  <TableCell>{mark.maxMarks}</TableCell>
+                  <TableCell>{((mark.marksObtained / mark.maxMarks) * 100).toFixed(1)}%</TableCell>
+                  <TableCell>{new Date(mark.date).toLocaleDateString()}</TableCell>
                   {showFacultyColumn && (
                     <TableCell>{mark.faculty_id?.email || 'Unknown'}</TableCell>
                   )}
@@ -197,13 +265,13 @@ function Marks({ role }) {
             <FormControl fullWidth margin="dense">
               <InputLabel>Student</InputLabel>
               <Select
-                value={formData.student_id}
-                onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
+                value={formData.studentRollNo}
+                onChange={(e) => setFormData({ ...formData, studentRollNo: e.target.value })}
                 required
               >
                 {students.map((student) => (
-                  <MenuItem key={student._id} value={student._id}>
-                    {student.name} ({student.rollNumber})
+                  <MenuItem key={student._id} value={student.rollNo}>
+                    {student.name} ({student.rollNo})
                   </MenuItem>
                 ))}
               </Select>
@@ -216,15 +284,49 @@ function Marks({ role }) {
               value={formData.subject}
               onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
             />
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Exam Type</InputLabel>
+              <Select
+                value={formData.examType}
+                onChange={(e) => handleExamTypeChange(e.target.value)}
+                required
+              >
+                {examTypeOptions.map((exam) => (
+                  <MenuItem key={exam.value} value={exam.value}>
+                    {exam.label} (Max: {exam.maxMarks})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
               margin="dense"
-              label="Marks"
+              label="Marks Obtained"
               type="number"
               fullWidth
               required
-              inputProps={{ min: 0, max: 100 }}
-              value={formData.marks}
-              onChange={(e) => setFormData({ ...formData, marks: Number(e.target.value) })}
+              inputProps={{ min: 0, max: formData.maxMarks || 100 }}
+              value={formData.marksObtained}
+              onChange={(e) => setFormData({ ...formData, marksObtained: e.target.value })}
+            />
+            <TextField
+              margin="dense"
+              label="Max Marks"
+              type="number"
+              fullWidth
+              required
+              inputProps={{ min: 1 }}
+              value={formData.maxMarks}
+              onChange={(e) => setFormData({ ...formData, maxMarks: e.target.value })}
+            />
+            <TextField
+              margin="dense"
+              label="Date"
+              type="date"
+              fullWidth
+              required
+              InputLabelProps={{ shrink: true }}
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
             />
           </DialogContent>
           <DialogActions>

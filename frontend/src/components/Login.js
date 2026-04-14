@@ -19,7 +19,7 @@ import api from '../api';
 
 function Login({ setToken, setRole }) {
   const [activeRole, setActiveRole] = useState('faculty');
-  const [formData, setFormData] = useState({ email: '', password: '', role: 'faculty' });
+  const [formData, setFormData] = useState({ email: '', password: '', role: 'faculty', rollno: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,11 @@ function Login({ setToken, setRole }) {
         setFormData({ email: '', password: '', role: activeRole });
         setIsSignup(false);
       } else {
-        const response = await api.post('/api/auth/login', formData);
+        const payload = { email: formData.email, password: formData.password };
+        if (activeRole === 'student') {
+          payload.rollno = formData.rollno;
+        }
+        const response = await api.post('/api/auth/login', payload);
         const userRole = response.data.role || 'student';
         
         localStorage.setItem('token', response.data.token);
@@ -108,7 +112,7 @@ function Login({ setToken, setRole }) {
                 label={config.label}
                 onClick={() => {
                   setActiveRole(role);
-                  setFormData({ email: '', password: '', role });
+                  setFormData({ email: '', password: '', role, rollno: '' });
                   setError('');
                   setSuccess('');
                   setIsSignup(false);
@@ -164,6 +168,20 @@ function Login({ setToken, setRole }) {
               onChange={handleChange}
               variant="outlined"
             />
+
+            {activeRole === 'student' && !isSignup && (
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                name="rollno"
+                label="Roll Number"
+                id="rollno"
+                value={formData.rollno}
+                onChange={handleChange}
+                variant="outlined"
+              />
+            )}
 
             {isSignup && (
               <FormControl fullWidth margin="normal">

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Student from "../models/Student.js";
 
 const createToken = (user) => {
   return jwt.sign(
@@ -13,8 +14,6 @@ const createToken = (user) => {
 export const signup = async (req, res) => {
   try {
     const { email, password, role } = req.body;
-    const roleLower = role?.toLowerCase();
-    const allowedRoles = ["admin", "faculty", "student"];
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
@@ -26,14 +25,14 @@ export const signup = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
+    
+    // Auto-assign admin role to first user, otherwise default to provided role or 'student'
     const userCount = await User.countDocuments();
-    let assignedRole = userCount === 0 ? "admin" : "student";
-    if (roleLower) {
-      if (!allowedRoles.includes(roleLower)) {
-        return res.status(400).json({ message: "Invalid role specified" });
-      }
-      assignedRole = roleLower;
+    let assignedRole = userCount === 0 ? "admin" : (role?.toLowerCase() || "student");
+    
+    const allowedRoles = ["admin", "faculty", "student"];
+    if (!allowedRoles.includes(assignedRole)) {
+      return res.status(400).json({ message: "Invalid role specified" });
     }
 
     const newUser = await User.create({
@@ -93,7 +92,7 @@ export const createUser = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rollno } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
@@ -107,6 +106,17 @@ export const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid password" });
+    }
+
+    // For students, verify rollno
+    if (user.role === 'student') {
+      if (!rollno) {
+        return res.status(400).json({ message: "Roll number required for student login" });
+      }
+      const student = await Student.findOne({ user_id: user._id, rollNumber: rollno });
+      if (!student) {
+        return res.status(400).json({ message: "Invalid roll number for this email" });
+      }
     }
 
     const token = createToken(user);

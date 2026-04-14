@@ -17,6 +17,10 @@ import {
   TextField,
   Alert,
   Box,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import api from '../api';
 
@@ -24,9 +28,19 @@ function Students({ role }) {
   const [students, setStudents] = useState([]);
   const [open, setOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
-  const [formData, setFormData] = useState({ name: '', rollNumber: '', class: '', branch: '', attendancePercentage: '' });
+  const [formData, setFormData] = useState({
+    name: '',
+    rollNo: '',
+    email: '',
+    password: '',
+    branch: '',
+    attendancePercentage: ''
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const normalizedRole = role?.toLowerCase();
+  const canModify = ['admin', 'faculty'].includes(normalizedRole);
 
   useEffect(() => {
     fetchStudents();
@@ -45,11 +59,19 @@ function Students({ role }) {
     setEditingStudent(student);
     setFormData(student ? {
       name: student.name,
-      rollNumber: student.rollNumber,
-      class: student.class,
+      rollNo: student.rollNo,
+      email: student.user_id?.email || '',
+      password: '', // Don't populate password for security
       branch: student.branch || '',
       attendancePercentage: student.attendancePercentage || '',
-    } : { name: '', rollNumber: '', class: '', branch: '', attendancePercentage: '' });
+    } : {
+      name: '',
+      rollNo: '',
+      email: '',
+      password: '',
+      branch: '',
+      attendancePercentage: ''
+    });
     setOpen(true);
     setError('');
   };
@@ -57,7 +79,14 @@ function Students({ role }) {
   const handleClose = () => {
     setOpen(false);
     setEditingStudent(null);
-    setFormData({ name: '', rollNumber: '', class: '', branch: '', attendancePercentage: '' });
+    setFormData({
+      name: '',
+      rollNo: '',
+      email: '',
+      password: '',
+      branch: '',
+      attendancePercentage: ''
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -66,10 +95,20 @@ function Students({ role }) {
     setError('');
 
     try {
+      let payload = formData;
       if (editingStudent) {
-        await api.put(`/api/students/${editingStudent._id}`, formData);
+        // For editing, only send updatable fields
+        payload = {
+          name: formData.name,
+          branch: formData.branch,
+          attendancePercentage: formData.attendancePercentage ? Number(formData.attendancePercentage) : undefined,
+        };
+      }
+
+      if (editingStudent) {
+        await api.put(`/api/students/${editingStudent.rollNo}`, payload);
       } else {
-        await api.post('/api/students', formData);
+        await api.post('/api/students', payload);
       }
 
       fetchStudents();
@@ -81,19 +120,19 @@ function Students({ role }) {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (rollNo) => {
     if (window.confirm('Are you sure you want to delete this student?')) {
       try {
-        await api.delete(`/api/students/${id}`);
+        await api.delete(`/api/students/${rollNo}`);
         fetchStudents();
       } catch (error) {
         console.error('Error deleting student:', error);
+        setError(error.response?.data?.message || 'Failed to delete student');
       }
     }
   };
 
-  const normalizedRole = role?.toLowerCase();
-  const canModify = ['admin', 'faculty'].includes(normalizedRole);
+  const branchOptions = ['CSE', 'ECE', 'ME', 'CE', 'EE', 'IT', 'Other'];
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -110,13 +149,15 @@ function Students({ role }) {
         )}
       </Box>
 
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Roll Number</TableCell>
-              <TableCell>Class</TableCell>
+              <TableCell>Roll No</TableCell>
+              <TableCell>Email</TableCell>
               <TableCell>Branch</TableCell>
               <TableCell>Attendance %</TableCell>
               <TableCell>Actions</TableCell>
@@ -126,17 +167,17 @@ function Students({ role }) {
             {students.map((student) => (
               <TableRow key={student._id}>
                 <TableCell>{student.name}</TableCell>
-                <TableCell>{student.rollNumber}</TableCell>
-                <TableCell>{student.class}</TableCell>
+                <TableCell>{student.rollNo}</TableCell>
+                <TableCell>{student.user_id?.email || 'N/A'}</TableCell>
                 <TableCell>{student.branch || 'N/A'}</TableCell>
-                <TableCell>{student.attendancePercentage || 100}%</TableCell>
+                <TableCell>{student.attendancePercentage || 0}%</TableCell>
                 <TableCell>
                   {canModify ? (
                     <>
                       <Button size="small" onClick={() => handleOpen(student)}>
                         Edit
                       </Button>
-                      <Button size="small" color="error" onClick={() => handleDelete(student._id)}>
+                      <Button size="small" color="error" onClick={() => handleDelete(student.rollNo)}>
                         Delete
                       </Button>
                     </>
@@ -168,27 +209,48 @@ function Students({ role }) {
             />
             <TextField
               margin="dense"
-              label="Roll Number"
+              label="Roll No"
               fullWidth
               required
-              value={formData.rollNumber}
-              onChange={(e) => setFormData({ ...formData, rollNumber: e.target.value })}
+              value={formData.rollNo}
+              onChange={(e) => setFormData({ ...formData, rollNo: e.target.value })}
+              disabled={editingStudent} // Don't allow rollNo changes when editing
             />
             <TextField
               margin="dense"
-              label="Class"
+              label="Email"
               fullWidth
-              required
-              value={formData.class}
-              onChange={(e) => setFormData({ ...formData, class: e.target.value })}
+              required={!editingStudent}
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={editingStudent} // Don't allow email changes when editing
             />
-            <TextField
-              margin="dense"
-              label="Branch"
-              fullWidth
-              value={formData.branch}
-              onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-            />
+            {!editingStudent && (
+              <TextField
+                margin="dense"
+                label="Password"
+                fullWidth
+                required={!editingStudent}
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              />
+            )}
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Branch</InputLabel>
+              <Select
+                value={formData.branch}
+                onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
+                label="Branch"
+              >
+                {branchOptions.map((branch) => (
+                  <MenuItem key={branch} value={branch}>
+                    {branch}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
               margin="dense"
               label="Attendance Percentage"

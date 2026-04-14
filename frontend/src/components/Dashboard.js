@@ -17,6 +17,7 @@ import {
   TableHead,
   TableRow,
   CircularProgress,
+  Alert,
 } from '@mui/material';
 import {
   Chart as ChartJS,
@@ -33,45 +34,52 @@ import api from '../api';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
-function Dashboard() {
-  const [summary, setSummary] = useState({
-    totalStudents: 0,
-    totalMarksRecords: 0,
-    averagePercentage: 0,
-    topPerformers: [],
-    atRiskCount: 0,
-    subjectAverages: [],
-    passFailRatio: { pass: 0, fail: 0 },
-    riskLevels: [],
-  });
+function Dashboard({ role }) {
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchSummary();
+    fetchAnalytics();
   }, []);
 
-  const fetchSummary = async () => {
+  const fetchAnalytics = async () => {
     try {
-      const response = await api.get('/api/analysis/summary');
-      setSummary(response.data);
+      const response = await api.get('/api/analysis/class/analytics');
+      setAnalytics(response.data);
     } catch (error) {
-      console.error('Error fetching dashboard summary:', error);
+      console.error('Error fetching class analytics:', error);
+      setError('Failed to load analytics data');
     } finally {
       setLoading(false);
     }
   };
 
+  const isAdminOrFaculty = role === 'admin' || role === 'faculty';
+
+  if (!isAdminOrFaculty) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Alert severity="info">
+          Student accounts can view their own performance data. Please use the Performance section to view your results.
+        </Alert>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Typography variant="h4" gutterBottom>
-        Dashboard
+        Class Analytics Dashboard
       </Typography>
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
           <CircularProgress />
         </Box>
-      ) : (
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : analytics ? (
         <>
           <Grid container spacing={3}>
             <Grid item xs={12} md={3}>
@@ -81,7 +89,7 @@ function Dashboard() {
                     Total Students
                   </Typography>
                   <Typography variant="h3" component="div">
-                    {summary.totalStudents}
+                    {analytics.totalStudents}
                   </Typography>
                 </CardContent>
               </Card>
@@ -94,7 +102,7 @@ function Dashboard() {
                     Total Marks Records
                   </Typography>
                   <Typography variant="h3" component="div">
-                    {summary.totalMarksRecords}
+                    {analytics.totalMarksRecords}
                   </Typography>
                 </CardContent>
               </Card>
@@ -104,10 +112,10 @@ function Dashboard() {
               <Card>
                 <CardContent>
                   <Typography color="textSecondary" gutterBottom>
-                    Average Percentage
+                    Class Average
                   </Typography>
                   <Typography variant="h3" component="div">
-                    {summary.averagePercentage}%
+                    {analytics.overallAverage}%
                   </Typography>
                 </CardContent>
               </Card>
@@ -120,20 +128,7 @@ function Dashboard() {
                     Pass/Fail Ratio
                   </Typography>
                   <Typography variant="h5" component="div">
-                    {summary.passFailRatio.pass}/{summary.passFailRatio.fail}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent>
-                  <Typography color="textSecondary" gutterBottom>
-                    High Risk Students
-                  </Typography>
-                  <Typography variant="h3" component="div">
-                    {summary.riskLevels.find(r => r._id === 'high')?.count || 0}
+                    {analytics.passFailRatio.pass}/{analytics.passFailRatio.fail}
                   </Typography>
                 </CardContent>
               </Card>
@@ -145,21 +140,21 @@ function Dashboard() {
               <Grid item xs={12} md={6}>
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h6" gutterBottom>
-                    Top Performers
+                    Top 5 Performers
                   </Typography>
-                  {summary.topPerformers.length > 0 ? (
+                  {analytics.topPerformers && analytics.topPerformers.length > 0 ? (
                     <List>
-                      {summary.topPerformers.map((student) => (
-                        <ListItem key={student.studentId} disableGutters>
+                      {analytics.topPerformers.map((student, index) => (
+                        <ListItem key={student._id} disableGutters>
                           <ListItemText
-                            primary={`${student.name} (${student.rollNumber})`}
-                            secondary={`Percentage: ${student.percentage}% | Total: ${student.totalMarks}`}
+                            primary={`${index + 1}. ${student.studentRollNo?.name || 'Unknown'} (${student.studentRollNo?.rollNo || 'N/A'})`}
+                            secondary={`Percentage: ${student.percentage}% | Rank: ${student.rank}`}
                           />
                         </ListItem>
                       ))}
                     </List>
                   ) : (
-                    <Typography>No top performer data yet.</Typography>
+                    <Typography>No performance data available yet.</Typography>
                   )}
                 </Paper>
               </Grid>
@@ -167,34 +162,37 @@ function Dashboard() {
               <Grid item xs={12} md={6}>
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h6" gutterBottom>
-                    Subject Average Scores
+                    Subject Performance
                   </Typography>
-                  {summary.subjectAverages.length > 0 ? (
+                  {analytics.subjectAverages && analytics.subjectAverages.length > 0 ? (
                     <TableContainer>
                       <Table>
                         <TableHead>
                           <TableRow>
                             <TableCell>Subject</TableCell>
-                            <TableCell>Average Marks</TableCell>
+                            <TableCell>Average %</TableCell>
+                            <TableCell>Students</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {summary.subjectAverages.map((subject) => (
+                          {analytics.subjectAverages.map((subject) => (
                             <TableRow key={subject.subject}>
                               <TableCell>{subject.subject}</TableCell>
-                              <TableCell>{subject.averageMarks}</TableCell>
+                              <TableCell>{subject.averagePercentage.toFixed(1)}%</TableCell>
+                              <TableCell>{subject.studentCount}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </TableContainer>
                   ) : (
-                    <Typography>No subject averages available.</Typography>
+                    <Typography>No subject data available.</Typography>
                   )}
                 </Paper>
               </Grid>
             </Grid>
           </Box>
+
           <Box sx={{ mt: 4 }}>
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
@@ -206,9 +204,15 @@ function Dashboard() {
                     data={{
                       labels: ['Pass', 'Fail'],
                       datasets: [{
-                        data: [summary.passFailRatio.pass, summary.passFailRatio.fail],
+                        data: [analytics.passFailRatio.pass, analytics.passFailRatio.fail],
                         backgroundColor: ['#4caf50', '#f44336'],
                       }],
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: { position: 'bottom' },
+                      },
                     }}
                   />
                 </Paper>
@@ -217,33 +221,62 @@ function Dashboard() {
               <Grid item xs={12} md={6}>
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h6" gutterBottom>
-                    Risk Levels
+                    Weakest Subjects
                   </Typography>
-                  <List>
-                    {(summary.riskLevels || []).map((risk) => {
-                      const riskName = risk._id ? `${risk._id.charAt(0).toUpperCase() + risk._id.slice(1)} Risk` : 'Unknown Risk';
-                      return (
-                        <ListItem key={risk._id || Math.random()}>
-                          <ListItemText primary={riskName} secondary={`Count: ${risk.count}`} />
+                  {analytics.weakestSubjects && analytics.weakestSubjects.length > 0 ? (
+                    <List>
+                      {analytics.weakestSubjects.map((subject) => (
+                        <ListItem key={subject.subject} disableGutters>
+                          <ListItemText
+                            primary={subject.subject}
+                            secondary={`Average: ${subject.averagePercentage.toFixed(1)}%`}
+                          />
                         </ListItem>
-                      );
-                    })}
-                  </List>
+                      ))}
+                    </List>
+                  ) : (
+                    <Typography>No subject performance data available.</Typography>
+                  )}
                 </Paper>
               </Grid>
             </Grid>
           </Box>
-          <Box sx={{ mt: 4 }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Welcome to the Performance Analysis System
-              </Typography>
-              <Typography variant="body1">
-                Use the navigation above to manage students, enter marks, and analyze performance data.
-              </Typography>
-            </Paper>
-          </Box>
+
+          {analytics.subjectAverages && analytics.subjectAverages.length > 0 && (
+            <Box sx={{ mt: 4 }}>
+              <Paper sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom>
+                  Subject-wise Performance Chart
+                </Typography>
+                <Bar
+                  data={{
+                    labels: analytics.subjectAverages.map(s => s.subject),
+                    datasets: [{
+                      label: 'Average Percentage',
+                      data: analytics.subjectAverages.map(s => s.averagePercentage),
+                      backgroundColor: 'rgba(25, 118, 210, 0.7)',
+                    }],
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: { position: 'top' },
+                      title: { display: true, text: 'Subject Performance Overview' },
+                    },
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        max: 100,
+                      },
+                    },
+                  }}
+                />
+              </Paper>
+            </Box>
+          )}
         </>
+      ) : (
+        <Alert severity="info">No analytics data available yet. Add some student marks and calculate performance to see analytics.</Alert>
       )}
     </Container>
   );

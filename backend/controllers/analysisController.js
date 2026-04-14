@@ -2,282 +2,196 @@ import Marks from "../models/Marks.js";
 import Performance from "../models/Performance.js";
 import Student from "../models/Student.js";
 
-const calculatePerformanceForStudent = async (student_id) => {
-  const marksData = await Marks.find({ student_id });
-  const student = await Student.findById(student_id);
-  if (!marksData || marksData.length === 0) {
-    return null;
-  }
+// Helper function to calculate grade
+const calculateGrade = (percentage) => {
+  if (percentage > 85) return 'A';
+  if (percentage > 70) return 'B';
+  if (percentage > 50) return 'C';
+  return 'F';
+};
 
-  const total = marksData.reduce((sum, m) => sum + m.marks, 0);
-  const percentage = (total / (marksData.length * 100)) * 100;
+// Helper function to calculate risk level
+const calculateRiskLevel = (percentage) => {
+  if (percentage > 75) return 'Low';
+  if (percentage > 50) return 'Medium';
+  return 'High';
+};
 
-  let grade = "C";
-  if (percentage > 80) grade = "A";
-  else if (percentage > 60) grade = "B";
+// Helper function to calculate consistency score (0-100, higher is more consistent)
+const calculateConsistencyScore = (percentages) => {
+  if (percentages.length < 2) return 100; // Perfect consistency with one exam
 
-  // Subject-wise analysis with trends (simulated)
-  const subjectWise = marksData.map(mark => {
-    const trend = mark.marks > 70 ? 'stable' : mark.marks > 50 ? 'declining' : 'improving'; // Simple logic
-    return { subject: mark.subject, marks: mark.marks, trend };
+  const mean = percentages.reduce((sum, p) => sum + p, 0) / percentages.length;
+  const variance = percentages.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / percentages.length;
+  const stdDev = Math.sqrt(variance);
+
+  // Convert to consistency score (lower std dev = higher consistency)
+  const consistencyScore = Math.max(0, 100 - (stdDev * 10));
+  return Math.round(consistencyScore);
+};
+
+// Helper function to detect trend
+const detectTrend = (scores) => {
+  if (scores.length < 2) return 'stable';
+
+  const recent = scores.slice(-2);
+  const diff = recent[1] - recent[0];
+
+  if (diff > 5) return 'improving';
+  if (diff < -5) return 'declining';
+  return 'stable';
+};
+
+// Helper function to determine subject strength
+const getSubjectStrength = (percentage) => {
+  if (percentage > 80) return 'Strong';
+  if (percentage > 50) return 'Average';
+  return 'Weak';
+};
+
+// Helper function to generate recommendations
+const generateRecommendations = (performance) => {
+  const recommendations = [];
+
+  // Subject-specific recommendations
+  performance.subjectWise.forEach(subject => {
+    if (subject.strength === 'Weak') {
+      recommendations.push(`Focus more on ${subject.subject} (currently ${subject.percentage.toFixed(1)}%)`);
+    } else if (subject.strength === 'Strong') {
+      recommendations.push(`Excellent performance in ${subject.subject}`);
+    }
   });
 
-  // Attendance impact
-  let attendanceImpact = 'neutral';
-  if (student.attendancePercentage > 85) attendanceImpact = 'positive';
-  else if (student.attendancePercentage < 75) attendanceImpact = 'negative';
+  // Trend-based recommendations
+  const improvingSubjects = performance.subjectWise.filter(s => s.trend === 'improving');
+  const decliningSubjects = performance.subjectWise.filter(s => s.trend === 'declining');
 
-  // Risk detection
-  let riskLevel = 'low';
-  const riskReasons = [];
-  if (percentage < 60) {
-    riskLevel = 'high';
-    riskReasons.push('Low overall percentage');
-  }
-  if (student.attendancePercentage < 75) {
-    riskLevel = riskLevel === 'high' ? 'high' : 'medium';
-    riskReasons.push('Low attendance');
-  }
-  const lowSubjects = subjectWise.filter(s => s.marks < 50);
-  if (lowSubjects.length > 0) {
-    riskLevel = 'high';
-    riskReasons.push(`Needs attention in: ${lowSubjects.map(s => s.subject).join(', ')}`);
+  if (improvingSubjects.length > 0) {
+    recommendations.push(`Keep up the good work in ${improvingSubjects.map(s => s.subject).join(', ')}`);
   }
 
-  // Simple prediction (average of current marks)
-  const avgMarks = total / marksData.length;
-  const prediction = { nextScore: Math.min(100, avgMarks + 5), confidence: 0.7 };
+  if (decliningSubjects.length > 0) {
+    recommendations.push(`Address declining performance in ${decliningSubjects.map(s => s.subject).join(', ')}`);
+  }
 
-  // Recommendations
-  const recommendations = [];
-  if (student.attendancePercentage < 75) recommendations.push('Improve attendance');
-  lowSubjects.forEach(s => recommendations.push(`Focus more on ${s.subject}`));
-  if (percentage < 70) recommendations.push('Seek additional tutoring');
+  // Consistency recommendations
+  if (performance.consistencyScore < 70) {
+    recommendations.push('Work on maintaining consistent performance across subjects');
+  } else {
+    recommendations.push('Maintain your consistent performance');
+  }
 
-  const performance = await Performance.findOneAndUpdate(
-    { student_id },
-    {
-      total,
-      percentage: Number(percentage.toFixed(2)),
-      grade,
-      subjectWise,
-      attendanceImpact,
-      riskLevel,
-      riskReasons,
-      prediction,
-      recommendations,
-    },
-    {
-      new: true,
-      upsert: true,
-      setDefaultsOnInsert: true,
-    }
-  );
+  // Overall recommendations
+  if (performance.grade === 'F') {
+    recommendations.push('Seek additional academic support and tutoring');
+  } else if (performance.grade === 'A') {
+    recommendations.push('Continue your excellent academic performance');
+  }
 
-  return performance;
+  return recommendations;
 };
 
-export const getSummary = async (req, res) => {
-  try {
-    const [totalStudents, totalMarksRecords, subjectAverages, studentAggregates] = await Promise.all([
-      Student.countDocuments(),
-      Marks.countDocuments(),
-      Marks.aggregate([
-        {
-          $group: {
-            _id: "$subject",
-            averageMarks: { $avg: "$marks" },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            subject: "$_id",
-            averageMarks: { $round: ["$averageMarks", 2] },
-          },
-        },
-        { $sort: { averageMarks: -1 } },
-      ]),
-      Marks.aggregate([
-        {
-          $group: {
-            _id: "$student_id",
-            totalMarks: { $sum: "$marks" },
-            subjectCount: { $sum: 1 },
-          },
-        },
-        {
-          $addFields: {
-            percentage: {
-              $cond: [
-                { $gt: ["$subjectCount", 0] },
-                { $multiply: [{ $divide: ["$totalMarks", { $multiply: ["$subjectCount", 100] }] }, 100] },
-                0,
-              ],
-            },
-          },
-        },
-        { $sort: { percentage: -1 } },
-      ]),
-    ]);
-
-    const averagePercentage = studentAggregates.length
-      ? Number(
-          (
-            studentAggregates.reduce((sum, current) => sum + current.percentage, 0) /
-            studentAggregates.length
-          ).toFixed(2)
-        )
-      : 0;
-
-    const aggregateWithStudent = await Marks.aggregate([
-      {
-        $group: {
-          _id: "$student_id",
-          totalMarks: { $sum: "$marks" },
-          subjectCount: { $sum: 1 },
-        },
-      },
-      {
-        $addFields: {
-          percentage: {
-            $cond: [
-              { $gt: ["$subjectCount", 0] },
-              { $multiply: [{ $divide: ["$totalMarks", { $multiply: ["$subjectCount", 100] }] }, 100] },
-              0,
-            ],
-          },
-        },
-      },
-      {
-        $lookup: {
-          from: "students",
-          localField: "_id",
-          foreignField: "_id",
-          as: "student",
-        },
-      },
-      { $unwind: "$student" },
-      {
-        $project: {
-          _id: 0,
-          studentId: "$_id",
-          name: "$student.name",
-          rollNumber: "$student.rollNumber",
-          totalMarks: 1,
-          percentage: { $round: ["$percentage", 2] },
-        },
-      },
-      { $sort: { percentage: -1 } },
-    ]);
-
-    const topPerformers = aggregateWithStudent.slice(0, 3);
-    const atRiskStudents = aggregateWithStudent.filter((student) => student.percentage < 60);
-
-    // Additional analytics
-    const passFailRatio = {
-      pass: aggregateWithStudent.filter(s => s.percentage >= 40).length,
-      fail: aggregateWithStudent.filter(s => s.percentage < 40).length,
-    };
-
-    const riskLevels = await Performance.aggregate([
-      { $group: { _id: '$riskLevel', count: { $sum: 1 } } }
-    ]);
-
-    res.status(200).json({
-      totalStudents,
-      totalMarksRecords,
-      averagePercentage,
-      topPerformers,
-      atRiskCount: atRiskStudents.length,
-      subjectAverages,
-      passFailRatio,
-      riskLevels,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error fetching dashboard summary", error: error.message });
-  }
-};
-
+// Calculate performance for a student
 export const calculatePerformance = async (req, res) => {
   try {
-    const { student_id } = req.body;
+    const { rollNo } = req.params;
 
-    // Get all marks of student and student data
-    const marksData = await Marks.find({ student_id });
-    const student = await Student.findById(student_id);
+    // Check if student exists
+    const student = await Student.findOne({ rollNo: rollNo.toUpperCase() });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
 
-    // Handle case: no marks found
+    // Get all marks for this student
+    const marksData = await Marks.find({ studentRollNo: rollNo.toUpperCase() }).sort({ date: 1 });
+
     if (!marksData || marksData.length === 0) {
       return res.status(404).json({ message: "No marks found for this student" });
     }
 
-    // Calculate total
-    let total = 0;
-    marksData.forEach((m) => {
-      total += m.marks;
+    // Group marks by subject
+    const subjectGroups = {};
+    marksData.forEach(mark => {
+      if (!subjectGroups[mark.subject]) {
+        subjectGroups[mark.subject] = [];
+      }
+      subjectGroups[mark.subject].push(mark);
     });
 
-    // Calculate percentage
-    const percentage = (total / (marksData.length * 100)) * 100;
+    // Calculate subject-wise performance
+    const subjectWise = [];
+    let totalObtained = 0;
+    let totalMax = 0;
 
-    // Assign grade
-    let grade = "C";
-    if (percentage > 80) grade = "A";
-    else if (percentage > 60) grade = "B";
+    for (const [subject, marks] of Object.entries(subjectGroups)) {
+      const subjectObtained = marks.reduce((sum, m) => sum + m.marksObtained, 0);
+      const subjectMax = marks.reduce((sum, m) => sum + m.maxMarks, 0);
+      const subjectPercentage = (subjectObtained / subjectMax) * 100;
 
-    // Subject-wise analysis with trends
-    const subjectWise = marksData.map(mark => {
-      const trend = mark.marks > 70 ? 'stable' : mark.marks > 50 ? 'declining' : 'improving';
-      return { subject: mark.subject, marks: mark.marks, trend };
-    });
+      // Get percentages for trend analysis
+      const percentages = marks.map(m => (m.marksObtained / m.maxMarks) * 100);
+      const trend = detectTrend(percentages);
 
-    // Attendance impact
-    let attendanceImpact = 'neutral';
-    if (student && student.attendancePercentage > 85) attendanceImpact = 'positive';
-    else if (student && student.attendancePercentage < 75) attendanceImpact = 'negative';
+      subjectWise.push({
+        subject,
+        obtained: subjectObtained,
+        max: subjectMax,
+        percentage: Number(subjectPercentage.toFixed(2)),
+        strength: getSubjectStrength(subjectPercentage),
+        trend
+      });
 
-    // Risk detection - includes attendance
-    let riskLevel = 'low';
-    const riskReasons = [];
-    if (percentage < 60) {
-      riskLevel = 'high';
-      riskReasons.push('Low overall percentage');
-    }
-    if (student && student.attendancePercentage < 75) {
-      riskLevel = riskLevel === 'high' ? 'high' : 'medium';
-      riskReasons.push('Low attendance');
-    }
-    const lowSubjects = subjectWise.filter(s => s.marks < 50);
-    if (lowSubjects.length > 0) {
-      riskLevel = 'high';
-      riskReasons.push(`Needs attention in: ${lowSubjects.map(s => s.subject).join(', ')}`);
+      totalObtained += subjectObtained;
+      totalMax += subjectMax;
     }
 
-    // Prediction
-    const avgMarks = total / marksData.length;
-    const prediction = { nextScore: Math.min(100, avgMarks + 5), confidence: 0.7 };
+    // Calculate overall performance
+    const percentage = (totalObtained / totalMax) * 100;
+    const grade = calculateGrade(percentage);
+    const riskLevel = calculateRiskLevel(percentage);
 
-    // Recommendations
-    const recommendations = [];
-    if (student && student.attendancePercentage < 75) recommendations.push('Improve attendance');
-    lowSubjects.forEach(s => recommendations.push(`Focus more on ${s.subject}`));
-    if (percentage < 70) recommendations.push('Seek additional tutoring');
+    // Calculate consistency score
+    const allPercentages = marksData.map(m => (m.marksObtained / m.maxMarks) * 100);
+    const consistencyScore = calculateConsistencyScore(allPercentages);
 
-    // Update existing performance or create one if missing
+    // Generate recommendations
+    const mockPerformance = {
+      subjectWise,
+      grade,
+      consistencyScore
+    };
+    const recommendations = generateRecommendations(mockPerformance);
+
+    // Prediction (simple weighted average)
+    const recentMarks = marksData.slice(-3); // Last 3 exams
+    const recentAvg = recentMarks.length > 0
+      ? recentMarks.reduce((sum, m) => sum + (m.marksObtained / m.maxMarks) * 100, 0) / recentMarks.length
+      : percentage;
+
+    const prediction = {
+      nextScore: Math.min(100, Math.max(0, recentAvg + (consistencyScore > 80 ? 2 : consistencyScore > 60 ? 0 : -2))),
+      confidence: consistencyScore
+    };
+
+    // Get rank (this would be calculated across all students)
+    const rank = await getStudentRank(rollNo.toUpperCase(), percentage);
+
+    // Save or update performance
     const performance = await Performance.findOneAndUpdate(
-      { student_id },
+      { studentRollNo: rollNo.toUpperCase() },
       {
-        total,
+        studentRollNo: rollNo.toUpperCase(),
+        totalObtained,
+        totalMax,
         percentage: Number(percentage.toFixed(2)),
         grade,
         subjectWise,
-        attendanceImpact,
+        consistencyScore,
         riskLevel,
-        riskReasons,
+        rank,
         prediction,
         recommendations,
+        lastCalculated: new Date()
       },
       {
         new: true,
@@ -286,10 +200,9 @@ export const calculatePerformance = async (req, res) => {
       }
     );
 
-    // Send response
     res.status(200).json({
       message: "Performance calculated successfully",
-      performance,
+      performance
     });
 
   } catch (error) {
@@ -298,25 +211,26 @@ export const calculatePerformance = async (req, res) => {
   }
 };
 
+// Get performance for a student
 export const getPerformance = async (req, res) => {
   try {
-    const { student_id } = req.params;
-    
+    const { rollNo } = req.params;
+
     // Students can only view their own performance; faculty/admin can view any student
     if (req.user.role === "student") {
       const student = await Student.findOne({ user_id: req.user.userId });
       if (!student) {
         return res.status(404).json({ message: "Student record not found" });
       }
-      if (student._id.toString() !== student_id) {
+      if (student.rollNo !== rollNo.toUpperCase()) {
         return res.status(403).json({ message: "Forbidden: You can only view your own performance" });
       }
     }
-    
-    const performance = await Performance.findOne({ student_id }).populate("student_id");
+
+    const performance = await Performance.findOne({ studentRollNo: rollNo.toUpperCase() });
 
     if (!performance) {
-      return res.status(404).json({ message: "No performance record found for this student" });
+      return res.status(404).json({ message: "No performance record found. Please calculate performance first." });
     }
 
     res.status(200).json({ performance });
@@ -324,4 +238,119 @@ export const getPerformance = async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Error fetching performance", error: error.message });
   }
+};
+
+// Get class analytics
+export const getClassAnalytics = async (req, res) => {
+  try {
+    const [
+      totalStudents,
+      totalMarksRecords,
+      subjectAverages,
+      gradeDistribution,
+      topPerformers,
+      weakestSubjects,
+      passFailRatio
+    ] = await Promise.all([
+      Student.countDocuments(),
+      Marks.countDocuments(),
+      // Subject averages
+      Marks.aggregate([
+        {
+          $group: {
+            _id: "$subject",
+            totalObtained: { $sum: "$marksObtained" },
+            totalMax: { $sum: "$maxMarks" },
+            studentCount: { $addToSet: "$studentRollNo" }
+          }
+        },
+        {
+          $project: {
+            subject: "$_id",
+            averagePercentage: {
+              $multiply: [{ $divide: ["$totalObtained", "$totalMax"] }, 100]
+            },
+            studentCount: { $size: "$studentCount" }
+          }
+        },
+        { $sort: { averagePercentage: -1 } }
+      ]),
+      // Grade distribution
+      Performance.aggregate([
+        { $group: { _id: "$grade", count: { $sum: 1 } } }
+      ]),
+      // Top 5 performers
+      Performance.find()
+        .populate('studentRollNo', 'name rollNo branch')
+        .sort({ percentage: -1 })
+        .limit(5),
+      // Weakest subjects (lowest average)
+      Marks.aggregate([
+        {
+          $group: {
+            _id: "$subject",
+            totalObtained: { $sum: "$marksObtained" },
+            totalMax: { $sum: "$maxMarks" }
+          }
+        },
+        {
+          $project: {
+            subject: "$_id",
+            averagePercentage: {
+              $multiply: [{ $divide: ["$totalObtained", "$totalMax"] }, 100]
+            }
+          }
+        },
+        { $sort: { averagePercentage: 1 } },
+        { $limit: 3 }
+      ]),
+      // Pass/Fail ratio
+      Performance.aggregate([
+        {
+          $group: {
+            _id: null,
+            pass: {
+              $sum: { $cond: [{ $gt: ["$percentage", 40] }, 1, 0] }
+            },
+            fail: {
+              $sum: { $cond: [{ $lte: ["$percentage", 40] }, 1, 0] }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const overallAverage = subjectAverages.length > 0
+      ? subjectAverages.reduce((sum, subj) => sum + subj.averagePercentage, 0) / subjectAverages.length
+      : 0;
+
+    res.status(200).json({
+      totalStudents,
+      totalMarksRecords,
+      overallAverage: Number(overallAverage.toFixed(2)),
+      subjectAverages: subjectAverages.map(s => ({
+        subject: s.subject,
+        averagePercentage: Number(s.averagePercentage.toFixed(2)),
+        studentCount: s.studentCount
+      })),
+      gradeDistribution,
+      topPerformers,
+      weakestSubjects: weakestSubjects.map(s => ({
+        subject: s.subject,
+        averagePercentage: Number(s.averagePercentage.toFixed(2))
+      })),
+      passFailRatio: passFailRatio[0] || { pass: 0, fail: 0 }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error fetching class analytics", error: error.message });
+  }
+};
+
+// Helper function to get student rank
+const getStudentRank = async (rollNo, percentage) => {
+  const higherPerformers = await Performance.countDocuments({
+    percentage: { $gt: percentage }
+  });
+  return higherPerformers + 1;
 };
