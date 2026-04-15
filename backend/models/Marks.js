@@ -7,33 +7,48 @@ const marksSchema = new mongoose.Schema(
       required: true,
       uppercase: true,
       trim: true,
-      ref: "Student"
     },
     subject: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
     examType: {
       type: String,
       required: true,
-      enum: ['mid1', 'mid2', 'endsem'],
-      lowercase: true
+      enum: ["mid1", "mid2", "endsem", "quiz", "assignment", "lab"],
+      lowercase: true,
     },
     marksObtained: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
     },
     maxMarks: {
       type: Number,
       required: true,
-      min: 1
+      min: 1,
+    },
+    semester: {
+      type: Number,
+      min: 1,
+      max: 8,
+      default: 1,
+    },
+    academicYear: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    faculty_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     date: {
       type: Date,
-      default: Date.now
-    }
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
@@ -42,12 +57,10 @@ const marksSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for percentage
-marksSchema.virtual("percentage").get(function () {
-  return (this.marksObtained / this.maxMarks) * 100;
+marksSchema.virtual("percentage").get(function percentage() {
+  return Number(((this.marksObtained / this.maxMarks) * 100).toFixed(2));
 });
 
-// Compound index to prevent duplicate marks for same student, subject, exam
 marksSchema.index({ studentRollNo: 1, subject: 1, examType: 1 }, { unique: true });
 
 export default mongoose.model("Marks", marksSchema);

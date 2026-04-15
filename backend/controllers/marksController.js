@@ -1,9 +1,14 @@
 import Marks from "../models/Marks.js";
 import Student from "../models/Student.js";
 
+const marksPopulate = [{ path: "faculty_id", select: "name email role" }];
+const validExamTypes = ["mid1", "mid2", "endsem", "quiz", "assignment", "lab"];
+
 export const addMarks = async (req, res) => {
   try {
-    const { studentRollNo, subject, examType, marksObtained, maxMarks, date } = req.body;
+    const { studentRollNo, subject, examType, marksObtained, maxMarks, date, semester, academicYear } = req.body;
+    const normalizedExamType = String(examType || "").toLowerCase();
+    const normalizedRollNo = studentRollNo?.toUpperCase();
 
     // Validate required fields
     if (!studentRollNo || !subject || !examType || marksObtained === undefined || !maxMarks) {
@@ -20,8 +25,8 @@ export const addMarks = async (req, res) => {
     }
 
     // Validate exam type
-    if (!['mid1', 'mid2', 'endsem'].includes(examType.toLowerCase())) {
-      return res.status(400).json({ message: "Exam type must be 'mid1', 'mid2', or 'endsem'" });
+    if (!validExamTypes.includes(normalizedExamType)) {
+      return res.status(400).json({ message: "Unsupported exam type" });
     }
 
     // Validate marks
@@ -30,21 +35,25 @@ export const addMarks = async (req, res) => {
     }
 
     // Check if student exists
-    const student = await Student.findOne({ rollNo: studentRollNo.toUpperCase() });
+    const student = await Student.findOne({ rollNo: normalizedRollNo });
     if (!student) {
       return res.status(404).json({ message: "Student not found" });
     }
 
     const newMarks = await Marks.create({
-      studentRollNo: studentRollNo.toUpperCase(),
+      studentRollNo: normalizedRollNo,
       subject: subject.trim(),
-      examType: examType.toLowerCase(),
-      marksObtained,
-      maxMarks,
+      examType: normalizedExamType,
+      marksObtained: Number(marksObtained),
+      maxMarks: Number(maxMarks),
+      semester: semester || student.semester || 1,
+      academicYear: academicYear || "",
+      faculty_id: req.user.userId,
       date: date || new Date()
     });
 
-    res.status(201).json({ message: "Marks added successfully", marks: newMarks });
+    const createdMarks = await Marks.findById(newMarks._id).populate(marksPopulate);
+    res.status(201).json({ message: "Marks added successfully", marks: createdMarks });
   } catch (error) {
     console.error(error);
     if (error.code === 11000) {
@@ -66,7 +75,7 @@ export const getMarks = async (req, res) => {
       }
       query = { studentRollNo: student.rollNo };
     }
-    const marks = await Marks.find(query).sort({ date: -1 });
+    const marks = await Marks.find(query).sort({ date: -1 }).populate(marksPopulate);
     res.status(200).json({ marks });
   } catch (error) {
     console.error(error);
@@ -77,31 +86,30 @@ export const getMarks = async (req, res) => {
 export const updateMarks = async (req, res) => {
   try {
     const { id } = req.params;
-    const { marksObtained, maxMarks, date, examType, subject } = req.body;
+    const { marksObtained, maxMarks, date, examType, subject, semester, academicYear } = req.body;
 
     const existingMark = await Marks.findById(id);
     if (!existingMark) {
       return res.status(404).json({ message: "Marks record not found" });
     }
 
-    // Validate examType if provided
-    if (examType !== undefined && !['mid1', 'mid2', 'endsem'].includes(examType.toLowerCase())) {
-      return res.status(400).json({ message: "Exam type must be 'mid1', 'mid2', or 'endsem'" });
+    if (marksObtained !== undefined) existingMark.marksObtained = Number(marksObtained);
+    if (maxMarks !== undefined) existingMark.maxMarks = Number(maxMarks);
+    if (date !== undefined) existingMark.date = date;
+    if (examType !== undefined) {
+      const normalizedExamType = examType.toLowerCase();
+      if (!validExamTypes.includes(normalizedExamType)) {
+        return res.status(400).json({ message: "Unsupported exam type" });
+      }
+      existingMark.examType = normalizedExamType;
     }
+    if (subject !== undefined) existingMark.subject = subject.trim();
+    if (semester !== undefined) existingMark.semester = Number(semester);
+    if (academicYear !== undefined) existingMark.academicYear = academicYear;
+    existingMark.faculty_id = req.user.userId;
 
-    // Validate marks if provided
-    if (marksObtained !== undefined && (marksObtained < 0 || marksObtained > (maxMarks || existingMark.maxMarks))) {
-      return res.status(400).json({ message: "Marks obtained must be between 0 and max marks" });
-    }
-
-    const updateData = {};
-    if (marksObtained !== undefined) updateData.marksObtained = marksObtained;
-    if (maxMarks !== undefined) updateData.maxMarks = maxMarks;
-    if (date !== undefined) updateData.date = date;
-    if (examType !== undefined) updateData.examType = examType.toLowerCase();
-    if (subject !== undefined) updateData.subject = subject.trim();
-
-    const updatedMarks = await Marks.findByIdAndUpdate(id, updateData, { new: true });
+    await existingMark.save();
+    const updatedMarks = await Marks.findById(id).populate(marksPopulate);
     res.status(200).json({ message: "Marks updated successfully", marks: updatedMarks });
   } catch (error) {
     console.error(error);
@@ -142,10 +150,7 @@ export const getMarksByStudent = async (req, res) => {
     }
 
     // Find marks by student roll number
-    const marks = await Marks.find({ studentRollNo: student_id.toUpperCase() }).sort({ date: -1 });
-    if (!marks || marks.length === 0) {
-      return res.status(404).json({ message: "No marks found for this student" });
-    }
+    const marks = await Marks.find({ studentRollNo: student_id.toUpperCase() }).sort({ date: -1 }).populate(marksPopulate);
     res.status(200).json({ marks });
   } catch (error) {
     console.error(error);

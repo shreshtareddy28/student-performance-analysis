@@ -1,5 +1,8 @@
+const validDepartments = ["CSE", "ECE", "ME", "CE", "EE", "IT", "AIML", "DS"];
+const validExamTypes = ["mid1", "mid2", "endsem", "quiz", "assignment", "lab"];
+
 export const validateStudent = (req, res, next) => {
-  const { name, rollNo, branch } = req.body;
+  const { name, rollNo, branch, email, password, semester } = req.body;
 
   if (!name || !rollNo) {
     return res.status(400).json({
@@ -19,15 +22,27 @@ export const validateStudent = (req, res, next) => {
     return res.status(400).json({ message: "Roll number must be a non-empty string" });
   }
 
-  if (branch && !['CSE', 'ECE', 'ME', 'CE', 'EE'].includes(branch)) {
-    return res.status(400).json({ message: "Branch must be one of: CSE, ECE, ME, CE, EE" });
+  if (email !== undefined && (!email || typeof email !== "string")) {
+    return res.status(400).json({ message: "Email must be a valid string" });
+  }
+
+  if (password !== undefined && String(password).trim().length < 6) {
+    return res.status(400).json({ message: "Password must be at least 6 characters" });
+  }
+
+  if (branch && !validDepartments.includes(branch)) {
+    return res.status(400).json({ message: "Branch must be a valid department" });
+  }
+
+  if (semester !== undefined && (Number(semester) < 1 || Number(semester) > 8)) {
+    return res.status(400).json({ message: "Semester must be between 1 and 8" });
   }
 
   next();
 };
 
 export const validateMarks = (req, res, next) => {
-  const { studentRollNo, subject, examType, marksObtained, maxMarks } = req.body;
+  const { studentRollNo, subject, examType, marksObtained, maxMarks, semester } = req.body;
 
   if (!studentRollNo || !subject || !examType || marksObtained === undefined || !maxMarks) {
     return res.status(400).json({
@@ -46,20 +61,16 @@ export const validateMarks = (req, res, next) => {
     return res.status(400).json({ message: "Subject must be a non-empty string" });
   }
 
-  if (!['mid1', 'mid2', 'endsem'].includes(examType.toLowerCase())) {
-    return res.status(400).json({ message: "Exam type must be 'mid1', 'mid2', or 'endsem'" });
+  if (!validExamTypes.includes(String(examType).toLowerCase())) {
+    return res.status(400).json({ message: "Unsupported exam type" });
   }
 
-  if (typeof marksObtained !== 'number' || marksObtained < 0) {
-    return res.status(400).json({ message: "Marks obtained must be a non-negative number" });
+  if (Number(marksObtained) < 0 || Number(maxMarks) <= 0 || Number(marksObtained) > Number(maxMarks)) {
+    return res.status(400).json({ message: "Marks must be between 0 and max marks" });
   }
 
-  if (typeof maxMarks !== 'number' || maxMarks <= 0) {
-    return res.status(400).json({ message: "Max marks must be a positive number" });
-  }
-
-  if (marksObtained > maxMarks) {
-    return res.status(400).json({ message: "Marks obtained cannot exceed max marks" });
+  if (semester !== undefined && (Number(semester) < 1 || Number(semester) > 8)) {
+    return res.status(400).json({ message: "Semester must be between 1 and 8" });
   }
 
   next();

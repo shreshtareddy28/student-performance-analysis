@@ -1,273 +1,211 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from "react";
 import {
-  Container,
-  Typography,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   Alert,
   Box,
-  FormControl,
-  InputLabel,
-  Select,
+  Button,
+  Card,
+  CardContent,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  LinearProgress,
   MenuItem,
-} from '@mui/material';
-import api from '../api';
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import api from "../api";
 
-function Students({ role }) {
+const initialForm = {
+  name: "",
+  rollNo: "",
+  email: "",
+  password: "",
+  branch: "CSE",
+  semester: 1,
+  section: "A",
+  attendancePercentage: 0,
+  guardianName: "",
+  guardianPhone: "",
+  cgpaTarget: 8,
+};
+
+const branchOptions = ["CSE", "ECE", "ME", "CE", "EE", "IT", "AIML", "DS"];
+
+function Students({ auth }) {
   const [students, setStudents] = useState([]);
+  const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    rollNo: '',
-    email: '',
-    password: '',
-    branch: '',
-    attendancePercentage: ''
-  });
-  const [error, setError] = useState('');
+  const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
 
-  const normalizedRole = role?.toLowerCase();
-  const canModify = ['admin', 'faculty'].includes(normalizedRole);
+  const isAdmin = auth.role === "admin";
+
+  const fetchStudents = async () => {
+    try {
+      const response = await api.get("/api/students");
+      setStudents(response.data.students || []);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to fetch students");
+    }
+  };
 
   useEffect(() => {
     fetchStudents();
   }, []);
 
-  const fetchStudents = async () => {
-    try {
-      const response = await api.get('/api/students');
-      setStudents(response.data.students);
-    } catch (error) {
-      console.error('Error fetching students:', error);
-    }
-  };
-
-  const handleOpen = (student = null) => {
+  const openDialog = (student = null) => {
     setEditingStudent(student);
-    setFormData(student ? {
-      name: student.name,
-      rollNo: student.rollNo,
-      email: student.user_id?.email || '',
-      password: '', // Don't populate password for security
-      branch: student.branch || '',
-      attendancePercentage: student.attendancePercentage || '',
-    } : {
-      name: '',
-      rollNo: '',
-      email: '',
-      password: '',
-      branch: '',
-      attendancePercentage: ''
-    });
+    setForm(
+      student
+        ? {
+            name: student.name,
+            rollNo: student.rollNo,
+            email: student.user_id?.email || "",
+            password: "",
+            branch: student.branch,
+            semester: student.semester || 1,
+            section: student.section || "A",
+            attendancePercentage: student.attendancePercentage || 0,
+            guardianName: student.guardianName || "",
+            guardianPhone: student.guardianPhone || "",
+            cgpaTarget: student.cgpaTarget || 8,
+          }
+        : initialForm
+    );
     setOpen(true);
-    setError('');
   };
 
-  const handleClose = () => {
-    setOpen(false);
-    setEditingStudent(null);
-    setFormData({
-      name: '',
-      rollNo: '',
-      email: '',
-      password: '',
-      branch: '',
-      attendancePercentage: ''
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      let payload = formData;
       if (editingStudent) {
-        // For editing, only send updatable fields
-        payload = {
-          name: formData.name,
-          branch: formData.branch,
-          attendancePercentage: formData.attendancePercentage ? Number(formData.attendancePercentage) : undefined,
-        };
-      }
-
-      if (editingStudent) {
-        await api.put(`/api/students/${editingStudent.rollNo}`, payload);
+        await api.put(`/api/students/${editingStudent.rollNo}`, form);
       } else {
-        await api.post('/api/students', payload);
+        await api.post("/api/students", form);
       }
-
+      setOpen(false);
+      setEditingStudent(null);
+      setForm(initialForm);
       fetchStudents();
-      handleClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred');
+      setError(err.response?.data?.message || "Failed to save student");
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (rollNo) => {
-    if (window.confirm('Are you sure you want to delete this student?')) {
-      try {
-        await api.delete(`/api/students/${rollNo}`);
-        fetchStudents();
-      } catch (error) {
-        console.error('Error deleting student:', error);
-        setError(error.response?.data?.message || 'Failed to delete student');
-      }
+    if (!window.confirm("Delete this student record?")) return;
+    try {
+      await api.delete(`/api/students/${rollNo}`);
+      fetchStudents();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to delete student");
     }
   };
 
-  const branchOptions = ['CSE', 'ECE', 'ME', 'CE', 'EE', 'IT', 'Other'];
+  const closeDialog = () => {
+    setOpen(false);
+    setEditingStudent(null);
+    setForm(initialForm);
+  };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Students</Typography>
-        {canModify ? (
-          <Button variant="contained" onClick={() => handleOpen()}>
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} justifyContent="space-between" sx={{ mb: 3 }}>
+        <Box>
+          <Typography variant="h4">Student Success Profiles</Typography>
+          <Typography color="text.secondary">
+            Rich student records with attendance, targets, guardians, and intervention-aware updates.
+          </Typography>
+        </Box>
+        {isAdmin && (
+          <Button variant="contained" onClick={() => openDialog()} sx={{ borderRadius: 999, px: 3 }}>
             Add Student
           </Button>
-        ) : (
-          <Typography variant="subtitle1" color="textSecondary">
-            Students have read-only access.
-          </Typography>
         )}
-      </Box>
+      </Stack>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Roll No</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Branch</TableCell>
-              <TableCell>Attendance %</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {students.map((student) => (
-              <TableRow key={student._id}>
-                <TableCell>{student.name}</TableCell>
-                <TableCell>{student.rollNo}</TableCell>
-                <TableCell>{student.user_id?.email || 'N/A'}</TableCell>
-                <TableCell>{student.branch || 'N/A'}</TableCell>
-                <TableCell>{student.attendancePercentage || 0}%</TableCell>
-                <TableCell>
-                  {canModify ? (
-                    <>
-                      <Button size="small" onClick={() => handleOpen(student)}>
-                        Edit
-                      </Button>
-                      <Button size="small" color="error" onClick={() => handleDelete(student.rollNo)}>
-                        Delete
-                      </Button>
-                    </>
-                  ) : (
-                    <Typography variant="body2" color="textSecondary">
-                      Read-only
+      <Grid container spacing={2}>
+        {students.map((student) => (
+          <Grid item xs={12} md={6} lg={4} key={student._id}>
+            <Card sx={{ height: "100%", background: "linear-gradient(180deg, #ffffff, #f9fbfd)" }}>
+              <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="start" spacing={2}>
+                  <Box>
+                    <Typography variant="h6">{student.name}</Typography>
+                    <Typography color="text.secondary">
+                      {student.rollNo} • {student.branch} • Semester {student.semester}
                     </Typography>
+                  </Box>
+                  <Typography fontWeight={700}>{student.attendancePercentage || 0}%</Typography>
+                </Stack>
+                <LinearProgress
+                  value={student.attendancePercentage || 0}
+                  variant="determinate"
+                  color={(student.attendancePercentage || 0) < 75 ? "warning" : "success"}
+                  sx={{ mt: 1.5, mb: 2, height: 8, borderRadius: 99 }}
+                />
+                <Typography><strong>Email:</strong> {student.user_id?.email}</Typography>
+                <Typography><strong>Section:</strong> {student.section || "A"}</Typography>
+                <Typography><strong>Guardian:</strong> {student.guardianName || "Not assigned"}</Typography>
+                <Typography><strong>Target CGPA:</strong> {student.cgpaTarget || 8}</Typography>
+                <Typography><strong>Advisor:</strong> {student.advisorFacultyId?.name || "Not assigned"}</Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 3 }}>
+                  <Button size="small" onClick={() => openDialog(student)}>Edit</Button>
+                  {isAdmin && (
+                    <Button size="small" color="error" onClick={() => handleDelete(student.rollNo)}>
+                      Delete
+                    </Button>
                   )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
 
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingStudent ? 'Edit Student' : 'Add Student'}</DialogTitle>
-        <form onSubmit={handleSubmit}>
-          <DialogContent>
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-            <TextField
-              autoFocus
-              margin="dense"
-              label="Name"
-              fullWidth
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-            <TextField
-              margin="dense"
-              label="Roll No"
-              fullWidth
-              required
-              value={formData.rollNo}
-              onChange={(e) => setFormData({ ...formData, rollNo: e.target.value })}
-              disabled={editingStudent} // Don't allow rollNo changes when editing
-            />
-            <TextField
-              margin="dense"
-              label="Email"
-              fullWidth
-              required={!editingStudent}
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              disabled={editingStudent} // Don't allow email changes when editing
-            />
+      <Dialog open={open} onClose={closeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>{editingStudent ? "Update Student" : "Add Student"}</DialogTitle>
+        <Box component="form" onSubmit={handleSubmit}>
+          <DialogContent sx={{ display: "grid", gap: 2 }}>
+            <TextField label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <TextField label="Roll Number" value={form.rollNo} disabled={Boolean(editingStudent)} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} required />
+            <TextField label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
             {!editingStudent && (
-              <TextField
-                margin="dense"
-                label="Password"
-                fullWidth
-                required={!editingStudent}
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
+              <TextField label="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
             )}
-            <FormControl fullWidth margin="dense">
-              <InputLabel>Branch</InputLabel>
-              <Select
-                value={formData.branch}
-                onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-                label="Branch"
-              >
-                {branchOptions.map((branch) => (
-                  <MenuItem key={branch} value={branch}>
-                    {branch}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              margin="dense"
-              label="Attendance Percentage"
-              fullWidth
-              type="number"
-              inputProps={{ min: 0, max: 100 }}
-              value={formData.attendancePercentage}
-              onChange={(e) => setFormData({ ...formData, attendancePercentage: e.target.value })}
-            />
+            <TextField select label="Branch" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })}>
+              {branchOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField label="Semester" type="number" value={form.semester} onChange={(e) => setForm({ ...form, semester: Number(e.target.value) })} />
+            <TextField label="Section" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} />
+            <TextField label="Attendance %" type="number" value={form.attendancePercentage} onChange={(e) => setForm({ ...form, attendancePercentage: Number(e.target.value) })} />
+            <TextField label="Guardian Name" value={form.guardianName} onChange={(e) => setForm({ ...form, guardianName: e.target.value })} />
+            <TextField label="Guardian Phone" value={form.guardianPhone} onChange={(e) => setForm({ ...form, guardianPhone: e.target.value })} />
+            <TextField label="Target CGPA" type="number" value={form.cgpaTarget} onChange={(e) => setForm({ ...form, cgpaTarget: Number(e.target.value) })} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Saving...' : editingStudent ? 'Update' : 'Add'}
+            <Button onClick={closeDialog}>Cancel</Button>
+            <Button type="submit" variant="contained" disabled={loading}>
+              {loading ? "Saving..." : editingStudent ? "Update" : "Create"}
             </Button>
           </DialogActions>
-        </form>
+        </Box>
       </Dialog>
     </Container>
   );

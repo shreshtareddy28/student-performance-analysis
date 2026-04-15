@@ -1,256 +1,166 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Container,
-  Paper,
-  TextField,
-  Button,
-  Typography,
-  Box,
-  Alert,
-  Chip,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-} from '@mui/material';
-import { School, AdminPanelSettings, Person } from '@mui/icons-material';
-import api from '../api';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Alert, Box, Button, Card, CardContent, Container, Grid, Stack, TextField, Typography } from "@mui/material";
+import { AdminPanelSettings, MenuBook, Person } from "@mui/icons-material";
+import api from "../api";
 
-function Login({ setToken, setRole }) {
-  const [activeRole, setActiveRole] = useState('faculty');
-  const [formData, setFormData] = useState({ email: '', password: '', role: 'faculty', rollno: '' });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isSignup, setIsSignup] = useState(false);
+const roles = {
+  admin: {
+    icon: <AdminPanelSettings sx={{ fontSize: 34 }} />,
+    title: "Admin",
+    description: "Owns the full academic command center, faculty operations, and student lifecycle.",
+    accent: "#113c6b",
+  },
+  faculty: {
+    icon: <MenuBook sx={{ fontSize: 34 }} />,
+    title: "Faculty",
+    description: "Records marks, monitors risk, and triggers intervention for students who need help.",
+    accent: "#0d7a6f",
+  },
+  student: {
+    icon: <Person sx={{ fontSize: 34 }} />,
+    title: "Student",
+    description: "Tracks score trends, badges, attendance, and an actionable study plan.",
+    accent: "#e86f2d",
+  },
+};
+
+function Login({ setAuth }) {
   const navigate = useNavigate();
+  const [activeRole, setActiveRole] = useState("admin");
+  const [signupMode, setSignupMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [form, setForm] = useState({ name: "", email: "", password: "", rollno: "" });
 
-  const roleConfig = {
-    faculty: {
-      icon: <School sx={{ fontSize: 40, marginRight: 1 }} />,
-      label: 'Faculty Login',
-      color: '#1976d2',
-      description: 'Login to manage student marks and performance',
-    },
-    admin: {
-      icon: <AdminPanelSettings sx={{ fontSize: 40, marginRight: 1 }} />,
-      label: 'Admin Login',
-      color: '#d32f2f',
-      description: 'Login to manage system and users',
-    },
-    student: {
-      icon: <Person sx={{ fontSize: 40, marginRight: 1 }} />,
-      label: 'Student Login',
-      color: '#388e3c',
-      description: 'Login to view your performance data',
-    },
-  };
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      if (isSignup) {
-        const payload = { ...formData, role: formData.role || activeRole };
-        await api.post('/api/auth/signup', payload);
-        setSuccess('Account created successfully! Please login with your credentials.');
-        setFormData({ email: '', password: '', role: activeRole });
-        setIsSignup(false);
+      if (signupMode) {
+        const response = await api.post("/api/auth/signup", {
+          name: form.name,
+          email: form.email,
+          password: form.password,
+        });
+        setSuccess(response.data.message);
+        setSignupMode(false);
+        setForm({ name: "", email: "", password: "", rollno: "" });
       } else {
-        const payload = { email: formData.email, password: formData.password };
-        if (activeRole === 'student') {
-          payload.rollno = formData.rollno;
+        const payload = { email: form.email, password: form.password };
+        if (activeRole === "student") payload.rollno = form.rollno;
+        const response = await api.post("/api/auth/login", payload);
+
+        if (response.data.role !== activeRole) {
+          throw new Error(`This account is registered as ${response.data.role}. Switch to that role and try again.`);
         }
-        const response = await api.post('/api/auth/login', payload);
-        const userRole = response.data.role || 'student';
-        
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('role', userRole);
-        setToken(response.data.token);
-        setRole(userRole);
-        navigate('/dashboard');
+
+        setAuth({
+          token: response.data.token,
+          role: response.data.role,
+          user: response.data.user,
+        });
+        navigate("/dashboard");
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred');
+      setError(err.response?.data?.message || err.message || "Authentication failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const currentConfig = roleConfig[activeRole];
-
   return (
-    <Container component="main" maxWidth="sm">
-      <Box
-        sx={{
-          marginTop: 4,
-          marginBottom: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        <Paper elevation={3} sx={{ padding: 4, width: '100%' }}>
-          <Typography component="h1" variant="h4" align="center" gutterBottom sx={{ mb: 4 }}>
-            Performance Analysis System
-          </Typography>
-
-          {/* Role Selection Tabs */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {Object.entries(roleConfig).map(([role, config]) => (
-              <Chip
-                key={role}
-                icon={config.icon}
-                label={config.label}
-                onClick={() => {
-                  setActiveRole(role);
-                  setFormData({ email: '', password: '', role, rollno: '' });
-                  setError('');
-                  setSuccess('');
-                  setIsSignup(false);
-                }}
-                variant={activeRole === role ? 'filled' : 'outlined'}
-                sx={{
-                  backgroundColor: activeRole === role ? config.color : 'transparent',
-                  color: activeRole === role ? 'white' : config.color,
-                  borderColor: config.color,
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  padding: '24px 16px',
-                  height: 'auto',
-                }}
-              />
-            ))}
-          </Box>
-
-          {/* Role Description */}
-          <Typography variant="body2" align="center" sx={{ mb: 3, color: 'textSecondary' }}>
-            {currentConfig.description}
-          </Typography>
-
-          {/* Alerts */}
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-
-          {/* Form */}
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={formData.email}
-              onChange={handleChange}
-              variant="outlined"
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Password"
-              type="password"
-              id="password"
-              autoComplete="current-password"
-              value={formData.password}
-              onChange={handleChange}
-              variant="outlined"
-            />
-
-            {activeRole === 'student' && !isSignup && (
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                name="rollno"
-                label="Roll Number"
-                id="rollno"
-                value={formData.rollno}
-                onChange={handleChange}
-                variant="outlined"
-              />
-            )}
-
-            {isSignup && (
-              <FormControl fullWidth margin="normal">
-                <InputLabel id="signup-role-label">Role</InputLabel>
-                <Select
-                  labelId="signup-role-label"
-                  id="signup-role"
-                  name="role"
-                  value={formData.role}
-                  label="Role"
-                  onChange={handleChange}
-                >
-                  <MenuItem value="student">Student</MenuItem>
-                  <MenuItem value="faculty">Faculty</MenuItem>
-                  <MenuItem value="admin">Admin</MenuItem>
-                </Select>
-              </FormControl>
-            )}
-
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ 
-                mt: 3, 
-                mb: 2,
-                backgroundColor: currentConfig.color,
-                '&:hover': {
-                  backgroundColor: currentConfig.color,
-                  opacity: 0.9,
-                }
-              }}
-              disabled={loading}
-            >
-              {loading ? 'Processing...' : isSignup ? 'Create Account' : 'Sign In'}
-            </Button>
-
-            <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Typography variant="body2">
-                {isSignup ? 'Already have an account?' : "Don't have an account?"}
-                {' '}
-                <Typography
-                  component="span"
-                  variant="body2"
-                  sx={{
-                    color: currentConfig.color,
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    '&:hover': { opacity: 0.8 },
-                  }}
-                  onClick={() => {
-                    setIsSignup(!isSignup);
-                    setFormData({ email: '', password: '', role: activeRole });
-                    setError('');
-                    setSuccess('');
-                  }}
-                >
-                  {isSignup ? 'Sign In' : 'Sign Up'}
-                </Typography>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(circle at top left, rgba(17,60,107,0.18), transparent 35%), linear-gradient(135deg, #f2f8ff 0%, #fff6ef 52%, #edf7f6 100%)",
+        display: "flex",
+        alignItems: "center",
+        py: 5,
+      }}
+    >
+      <Container maxWidth="lg">
+        <Grid container spacing={4} alignItems="center">
+          <Grid item xs={12} md={6}>
+            <Stack spacing={2}>
+              <Typography variant="h3">Student Performance Analysis, upgraded for real academic decisions.</Typography>
+              <Typography variant="h6" color="text.secondary">
+                Early alerts, richer analytics, stronger faculty coordination, and focused student recovery plans.
               </Typography>
-            </Box>
-          </Box>
+              <Grid container spacing={2}>
+                {Object.entries(roles).map(([key, role]) => (
+                  <Grid item xs={12} key={key}>
+                    <Card
+                      onClick={() => setActiveRole(key)}
+                      sx={{
+                        cursor: "pointer",
+                        border: key === activeRole ? `2px solid ${role.accent}` : "1px solid rgba(17,60,107,0.1)",
+                        background: key === activeRole ? "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(224,239,249,0.9))" : "white",
+                      }}
+                    >
+                      <CardContent>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <Box sx={{ color: role.accent }}>{role.icon}</Box>
+                          <Box>
+                            <Typography variant="h6">{role.title} Portal</Typography>
+                            <Typography color="text.secondary">{role.description}</Typography>
+                          </Box>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </Stack>
+          </Grid>
 
-          <Typography variant="caption" display="block" align="center" sx={{ mt: 4, color: 'textSecondary' }}>
-            Note: When signing up, the selected role will be used for new accounts. Students will still be the default role unless you select Faculty or Admin.
-          </Typography>
-        </Paper>
-      </Box>
-    </Container>
+          <Grid item xs={12} md={6}>
+            <Card sx={{ borderRadius: 6, overflow: "hidden" }}>
+              <Box sx={{ p: 4, background: `linear-gradient(135deg, ${roles[activeRole].accent}, #1b95a6)`, color: "white" }}>
+                <Typography variant="h4">{signupMode ? "Bootstrap Account" : `${roles[activeRole].title} Login`}</Typography>
+                <Typography sx={{ mt: 1, color: "rgba(255,255,255,0.82)" }}>
+                  {signupMode
+                    ? "The first signup becomes admin. Later signups create student accounts."
+                    : "Use the correct role entry point for a cleaner and more secure workflow."}
+                </Typography>
+              </Box>
+              <CardContent sx={{ p: 4 }}>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+                <Box component="form" onSubmit={handleSubmit} sx={{ display: "grid", gap: 2 }}>
+                  {signupMode && (
+                    <TextField label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                  )}
+                  <TextField label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                  <TextField label="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+                  {!signupMode && activeRole === "student" && (
+                    <TextField label="Roll Number" value={form.rollno} onChange={(e) => setForm({ ...form, rollno: e.target.value })} required />
+                  )}
+                  <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ borderRadius: 999 }}>
+                    {loading ? "Please wait..." : signupMode ? "Create Account" : "Enter Portal"}
+                  </Button>
+                </Box>
+
+                <Stack direction="row" spacing={1} sx={{ mt: 3 }}>
+                  <Typography color="text.secondary">
+                    {signupMode ? "Already created the bootstrap account?" : "Need to initialize the system?"}
+                  </Typography>
+                  <Button variant="text" onClick={() => setSignupMode((current) => !current)}>
+                    {signupMode ? "Back to login" : "Sign up"}
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Container>
+    </Box>
   );
 }
 

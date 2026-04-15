@@ -8,6 +8,7 @@ import studentRoutes from "./routes/studentRoutes.js";
 import marksRoutes from "./routes/marksRoutes.js";
 import analysisRoutes from "./routes/analysisRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 
 // Load env variables
 dotenv.config();
@@ -26,6 +27,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/marks", marksRoutes);
 app.use("/api/analysis", analysisRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 
 // Test route (optional)
 app.get("/", (req, res) => {
