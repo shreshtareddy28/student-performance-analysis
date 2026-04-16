@@ -26,7 +26,7 @@ function Navbar({ auth, setAuth }) {
     >
       <Toolbar sx={{ gap: 2, flexWrap: "wrap", py: 1 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexGrow: 1 }}>
-          <Typography variant="h6">EduPulse Performance Hub</Typography>
+          <Typography variant="h6">Performance Analysis</Typography>
           <Chip
             label={`${auth.role?.toUpperCase() || "USER"} MODE`}
             size="small"
